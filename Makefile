@@ -37,6 +37,12 @@ package-arch:
 dist:
 	./build_all.sh
 
+release:
+	./release_github.sh
+
+release-only:
+	./release_github.sh --skip-build
+
 install:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules_install
 
