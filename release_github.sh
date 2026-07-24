@@ -19,14 +19,7 @@ DATE_VER="1.20260725"
 FULL_VERSION="${DATE_VER}-${BUILD_NUM}"
 TAG="v${FULL_VERSION}"
 
-# Auto-detect GitHub repo from git remote (supports both SSH and HTTPS remotes)
-REPO=$(git -C "${SCRIPT_DIR}" remote get-url origin 2>/dev/null \
-    | sed -E 's|.*github\.com[:/]||;s|\.git$||')
-# Fallback to upstream if origin is not a github.com URL
-if [[ -z "$REPO" ]] || [[ "$REPO" == "$(git -C "${SCRIPT_DIR}" remote get-url origin 2>/dev/null)" ]]; then
-    REPO=$(git -C "${SCRIPT_DIR}" remote get-url upstream 2>/dev/null \
-        | sed -E 's|.*github\.com[:/]||;s|\.git$||')
-fi
+# REPO will be auto-detected after gh auth check below
 
 # ---- Colors ----
 CYAN='\033[1;36m'
@@ -55,6 +48,14 @@ if ! gh auth status >/dev/null 2>&1; then
     echo -e "${YELLOW}    Run: gh auth login${RESET}"
     exit 1
 fi
+
+# Auto-detect repo using gh (handles SSH aliases, HTTPS, and custom hosts)
+REPO=$(cd "${SCRIPT_DIR}" && gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
+if [[ -z "$REPO" ]]; then
+    echo -e "${RED}[!] Could not detect GitHub repository. Make sure origin or upstream points to a GitHub repo.${RESET}"
+    exit 1
+fi
+echo -e "${CYAN}  Detected repo: ${YELLOW}${REPO}${RESET}"
 
 # ---- Optional: Skip Build ----
 SKIP_BUILD=false
