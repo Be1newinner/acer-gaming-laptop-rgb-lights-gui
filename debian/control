@@ -1,0 +1,12 @@
+Package: shipsar-acer-rgb-controller
+Version: 1.20260725-02
+Section: utils
+Priority: optional
+Architecture: all
+Maintainer: Shipsar Developers <contact@shipsar.com>
+Depends: python3, python3-tk, dkms, build-essential, rsync, udev, systemd
+Homepage: https://github.com/shipsar/acer-gaming-laptop-rgb-lights-gui
+Description: Shipsar Acer Predator RGB & Turbo Control
+ Kernel module (via DKMS) and GUI control center developed by Shipsar Developers
+ for Acer Predator, Helios, and Nitro gaming laptops to enable Turbo mode
+ and RGB keyboard lighting control.

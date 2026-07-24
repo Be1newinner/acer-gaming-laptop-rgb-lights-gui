@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Shipsar Acer RGB Control
+Comment=Shipsar Developers - Acer Predator RGB Keyboard & Turbo Controller
+Exec=shipsar-acer-rgb
+Icon=utilities-system-monitor
+Terminal=false
+Type=Application
+Categories=Utility;Settings;System;
+Keywords=acer;predator;rgb;keyboard;backlight;turbo;shipsar;

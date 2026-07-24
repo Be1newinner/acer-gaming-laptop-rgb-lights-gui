@@ -1,0 +1,43 @@
+#!/bin/sh
+set -e
+
+PACKAGE_NAME="facer"
+PACKAGE_VERSION="1.20260725"
+SERVICE_NAME="shipsar-acer-rgb.service"
+
+case "$1" in
+    remove|deconfigure)
+        echo "[*] Removing Shipsar Acer Predator Turbo & RGB Control..."
+
+        # 1. Stop & Disable systemd service
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl stop ${SERVICE_NAME} turbo-fan.service 2>/dev/null || true
+            systemctl disable ${SERVICE_NAME} turbo-fan.service 2>/dev/null || true
+        fi
+
+        # 2. Remove DKMS module
+        if command -v dkms >/dev/null 2>&1; then
+            echo "[*] Removing DKMS module..."
+            dkms remove ${PACKAGE_NAME}/${PACKAGE_VERSION} --all 2>/dev/null || true
+        fi
+
+        # 3. Clean up configuration files
+        rm -f /etc/modprobe.d/blacklist-acer-wmi.conf
+        rm -f /etc/udev/rules.d/99-acer-gkbbl.rules
+        rm -f /dev/acer-gkbbl-0 /dev/acer-gkbbl-static-0
+
+        if command -v udevadm >/dev/null 2>&1; then
+            udevadm control --reload-rules || true
+        fi
+        ;;
+
+    upgrade|failed-upgrade)
+        ;;
+
+    *)
+        echo "prerm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

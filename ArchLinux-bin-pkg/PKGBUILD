@@ -1,0 +1,68 @@
+# Maintainer: Shipsar Developers <contact@shipsar.com>
+
+pkgname=shipsar-acer-rgb-controller-git
+pkgver=1.20260725
+pkgrel=1
+pkgdesc="Shipsar Developers - Acer Predator/Helios/Nitro Laptop Turbo & RGB Control Center"
+arch=('x86_64')
+url="https://github.com/shipsar/acer-gaming-laptop-rgb-lights-gui"
+license=('GPL2')
+depends=('linux-headers' 'dkms' 'python' 'rsync')
+makedepends=('git' 'gcc' 'make')
+optdepends=(
+  'linux-lts-headers: For LTS kernel support'
+  'kmod: For module signing with secure boot'
+  'mokutil: For secure boot key management'
+)
+provides=("${pkgname%-git}" "acer-predator-turbo-rgb-git" "rgb-controller")
+conflicts=("${pkgname%-git}" "acer-predator-turbo-rgb-git")
+install="${pkgname}.install"
+source=("git+${url}")
+sha256sums=('SKIP')
+
+package() {
+  cd "${srcdir}/acer-gaming-laptop-rgb-lights-gui" 2>/dev/null || cd "${srcdir}/acer-predator-turbo-and-rgb-keyboard-linux-module"
+
+  # Create target directory under /opt/shipsar-developers/acer-rgb-controller
+  install -dm755 "${pkgdir}/opt/shipsar-developers/acer-rgb-controller"
+
+  # Copy all files to target directory
+  rsync -av ./* "${pkgdir}/opt/shipsar-developers/acer-rgb-controller/" --exclude=".git"
+
+  # Create systemd service file
+  install -Dm644 /dev/stdin "${pkgdir}/usr/lib/systemd/system/shipsar-acer-rgb.service" << EOF
+[Unit]
+Description=Shipsar Acer Predator RGB & Turbo Control Service
+After=sysinit.target
+StartLimitIntervalSec=5
+
+[Service]
+Type=simple
+Restart=no
+RemainAfterExit=yes
+User=root
+WorkingDirectory=/opt/shipsar-developers/acer-rgb-controller
+ExecStart=/bin/bash /opt/shipsar-developers/acer-rgb-controller/service.sh
+ExecStop=/bin/bash ./uninstall.sh
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  # Install binary launchers
+  install -Dm755 /dev/stdin "${pkgdir}/usr/bin/rgb-controller" << EOF
+#!/bin/sh
+exec python3 /opt/shipsar-developers/acer-rgb-controller/facer_gui.py "\$@"
+EOF
+
+  ln -sf rgb-controller "${pkgdir}/usr/bin/shipsar-acer-rgb"
+  ln -sf rgb-controller "${pkgdir}/usr/bin/facer_gui"
+
+  # Install desktop icon
+  if [ -f "${pkgdir}/opt/shipsar-developers/acer-rgb-controller/public/logo.png" ]; then
+    install -Dm644 "${pkgdir}/opt/shipsar-developers/acer-rgb-controller/public/logo.png" "${pkgdir}/usr/share/pixmaps/shipsar-acer-rgb.png"
+  fi
+
+  # Set appropriate permissions
+  chmod 755 "${pkgdir}/opt/shipsar-developers/acer-rgb-controller/service.sh"
+}
