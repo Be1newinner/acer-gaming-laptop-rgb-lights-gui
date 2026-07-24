@@ -11,6 +11,8 @@ A powerful, native Linux kernel driver and graphical control center for **Acer P
 
 ---
 
+![Screenshot](public/screenshot_1.png)
+
 ## 🌟 Highlights & Features
 
 - **⚡ Hardware Turbo Mode**: Hardware fan boost button support with auto-persistence across reboots.
@@ -23,7 +25,7 @@ A powerful, native Linux kernel driver and graphical control center for **Acer P
 
 ## 🚀 Installation Options
 
-### Option 1: Debian / Ubuntu / Linux Mint / Pop!_OS (`.deb` Package) - Recommended
+### Option 1: Debian / Ubuntu / Linux Mint / Pop!\_OS (`.deb` Package) - Recommended
 
 Download the latest `.deb` package from [Releases](https://github.com/shipsar/releases) or build it locally:
 
@@ -35,7 +37,7 @@ make package-deb
 sudo apt install ./dist/shipsar-acer-rgb-controller_1.20260725-1_all.deb
 ```
 
-*Installed to `/opt/shipsar-developers/acer-rgb-controller/` with automatic DKMS driver updates.*
+_Installed to `/opt/shipsar-developers/acer-rgb-controller/` with automatic DKMS driver updates._
 
 ---
 
@@ -90,7 +92,7 @@ Launch the application anytime from your terminal or the Ubuntu Application Menu
 rgb-controller
 ```
 
-*(Aliases `shipsar-acer-rgb` and `facer_gui` are also available for backward compatibility).*
+_(Aliases `shipsar-acer-rgb` and `facer_gui` are also available for backward compatibility)._
 
 ---
 
