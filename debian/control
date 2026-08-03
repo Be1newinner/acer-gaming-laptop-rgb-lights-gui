@@ -5,6 +5,7 @@ Priority: optional
 Architecture: all
 Maintainer: Shipsar Developers <contact@shipsar.com>
 Depends: python3, python3-tk, dkms, build-essential, rsync, udev, systemd
+Recommends: linux-headers-generic, mokutil
 Homepage: https://github.com/shipsar/acer-gaming-laptop-rgb-lights-gui
 Description: Shipsar Acer Predator RGB & Turbo Control
  Kernel module (via DKMS) and GUI control center developed by Shipsar Developers

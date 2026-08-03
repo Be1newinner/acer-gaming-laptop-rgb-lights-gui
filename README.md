@@ -125,6 +125,31 @@ sudo systemctl stop shipsar-acer-rgb
 
 ---
 
+## ⚠️ Hardware Compatibility Note
+
+The RGB keyboard character devices (`/dev/acer-gkbbl-0`, `/dev/acer-gkbbl-static-0`) are only created if your laptop's firmware exposes **both** of these ACPI-WMI GUIDs:
+
+- `61EF69EA-865C-4BC3-A502-A0DEBA0CB531` (WMID interface v2)
+- `7A4DDFE7-5B5D-40B4-8595-4408E0CC7F56` (gaming keyboard backlight)
+
+Check whether your machine exposes them with:
+
+```bash
+ls /sys/bus/wmi/devices/ | grep -iE "61EF69EA|7A4DDFE7"
+```
+
+If both GUIDs are listed but the app still shows **"Module Unloaded"**, it's almost always one of these (all now handled automatically on `.deb` installs):
+
+- **Service never started** – check with `systemctl status shipsar-acer-rgb` and `journalctl -u shipsar-acer-rgb`. A single unrelated failed unit elsewhere on the system (`systemctl --failed`) does *not* block this anymore, but is still worth ruling out first.
+- **Secure Boot MOK not enrolled** – Ubuntu signs the DKMS-built module with a machine-owner key (MOK) that the firmware won't trust until you complete the one-time blue "Enroll MOK" screen at the next reboot. Check with `mokutil --sb-state` and `sudo mokutil --list-enrolled`.
+- **Missing kernel headers** – DKMS needs `linux-headers-$(uname -r)` to build the module; the `.deb` now pulls in `linux-headers-generic` automatically via `Recommends`, but HWE/lowlatency kernels may need the matching headers package installed manually.
+
+If neither GUID is listed for your model, the keyboard isn't reachable via this driver on your hardware — this is a firmware/vendor limitation, not something the app or module can work around.
+
+The GUI's error dialogs include a **📋 Copy to Clipboard** button and a **📧 Send to Developer** button (opens your mail client addressed to `info@shipsar.in`) that both attach a full diagnostic report — OS, kernel, desktop session, device status, and the exact error — to make triaging reports like this fast.
+
+---
+
 ## 🇮🇳 About Shipsar Developers
 
 **Shipsar Developers** is an innovative software technology firm based in **India 🇮🇳**, dedicated to creating cutting-edge hardware utilities, open-source Linux tools, and high-performance applications for users across the globe.

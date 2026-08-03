@@ -21,21 +21,63 @@ case "$1" in
 
         # 3. Add & Install kernel module via DKMS
         if command -v dkms >/dev/null 2>&1; then
+            KERNEL_HEADERS="/lib/modules/$(uname -r)/build"
+            if [ ! -e "${KERNEL_HEADERS}" ]; then
+                echo "[!] WARNING: Kernel headers not found at ${KERNEL_HEADERS}." >&2
+                echo "[!] The DKMS build below will most likely fail. Install them with:" >&2
+                echo "[!]   sudo apt install linux-headers-$(uname -r)" >&2
+                echo "[!] then rebuild with: sudo dkms install -m ${PACKAGE_NAME} -v ${PACKAGE_VERSION}" >&2
+            fi
+
             echo "[*] Registering module with DKMS..."
             dkms remove ${PACKAGE_NAME}/${PACKAGE_VERSION} --all 2>/dev/null || true
-            dkms add -m ${PACKAGE_NAME} -v ${PACKAGE_VERSION} || true
-            echo "[*] Building and installing DKMS kernel driver..."
-            dkms build -m ${PACKAGE_NAME} -v ${PACKAGE_VERSION} || true
-            dkms install -m ${PACKAGE_NAME} -v ${PACKAGE_VERSION} || true
+            dkms add -m ${PACKAGE_NAME} -v ${PACKAGE_VERSION} 2>/dev/null || true
+
+            echo "[*] Building DKMS kernel driver..."
+            if ! dkms build -m ${PACKAGE_NAME} -v ${PACKAGE_VERSION}; then
+                echo "[!] ERROR: DKMS build failed for ${PACKAGE_NAME}/${PACKAGE_VERSION}." >&2
+                echo "[!] See /var/lib/dkms/${PACKAGE_NAME}/${PACKAGE_VERSION}/build/make.log for details." >&2
+                echo "[!] The keyboard RGB app will show 'Module Unloaded' until this is fixed." >&2
+            elif ! dkms install -m ${PACKAGE_NAME} -v ${PACKAGE_VERSION}; then
+                echo "[!] ERROR: DKMS install failed for ${PACKAGE_NAME}/${PACKAGE_VERSION}." >&2
+                echo "[!] If Secure Boot is enabled, the module must be signed - check 'mokutil --sb-state'" >&2
+                echo "[!] and see https://wiki.debian.org/SecureBoot for signing unsigned modules." >&2
+            else
+                echo "[*] DKMS module built and installed successfully."
+                if command -v mokutil >/dev/null 2>&1 && mokutil --sb-state 2>/dev/null | grep -qi "SecureBoot enabled"; then
+                    echo "[!] NOTE: Secure Boot is ENABLED on this system." >&2
+                    echo "[!] Ubuntu's DKMS signs kernel modules with a locally generated key (MOK)," >&2
+                    echo "[!] but the firmware won't trust it until you enroll it once at boot." >&2
+                    echo "[!] If the RGB app still shows 'Module Unloaded' after this install:" >&2
+                    echo "[!]   1. Run: sudo mokutil --list-enrolled | grep -i shipsar (or DKMS)" >&2
+                    echo "[!]   2. If not listed, reboot and complete the blue 'MOK Management' /" >&2
+                    echo "[!]      'Enroll MOK' screen (you may be prompted by shim-signed for a" >&2
+                    echo "[!]      one-time password during other package installs/upgrades)." >&2
+                    echo "[!]   3. After enrollment, run: sudo modprobe facer" >&2
+                fi
+            fi
         else
-            echo "[!] Warning: dkms command not found. Kernel module could not be registered automatically."
+            echo "[!] WARNING: dkms command not found. Kernel module could not be registered automatically." >&2
+            echo "[!] Install dkms, then run: sudo dkms install -m ${PACKAGE_NAME} -v ${PACKAGE_VERSION}" >&2
         fi
 
         # 4. Enable and start systemd service
-        if command -v systemctl >/dev/null 2>&1 && systemctl is-system-running >/dev/null 2>&1; then
+        # NOTE: don't gate this on `systemctl is-system-running` - it only
+        # reports "running" when every unit on the system is healthy, so a
+        # single unrelated failed service (common on real desktops) would
+        # silently skip enabling/starting ours with no error shown.
+        if command -v systemctl >/dev/null 2>&1; then
             systemctl daemon-reload || true
-            systemctl enable ${SERVICE_NAME} || true
-            systemctl start ${SERVICE_NAME} --no-block || true
+            if ! systemctl enable ${SERVICE_NAME}; then
+                echo "[!] WARNING: failed to enable ${SERVICE_NAME}." >&2
+            fi
+            if ! systemctl start ${SERVICE_NAME} --no-block; then
+                echo "[!] WARNING: failed to start ${SERVICE_NAME}. Check:" >&2
+                echo "[!]   journalctl -u ${SERVICE_NAME}" >&2
+            fi
+        else
+            echo "[!] WARNING: systemctl not found. The facer module will only" >&2
+            echo "[!] load on demand, not automatically at boot." >&2
         fi
 
         echo "[*] Installation complete!"

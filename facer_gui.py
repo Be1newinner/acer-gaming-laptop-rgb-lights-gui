@@ -7,10 +7,14 @@ Native GUI for Acer Predator, Helios, and Nitro gaming laptops on Linux.
 
 import json
 import os
+import platform
 import sys
 import math
 import subprocess
+import threading
+import urllib.parse
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, colorchooser, messagebox, simpledialog
@@ -23,6 +27,8 @@ CHARACTER_DEVICE_STATIC = "/dev/acer-gkbbl-static-0"
 
 CONFIG_DIRECTORY = str(Path.home()) + "/.config/predator/saved profiles"
 DRIVER_VERSION = "1.20260725-02"
+FACER_RGB_SCRIPT = str(Path(__file__).resolve().parent / "facer_rgb.py")
+DEVELOPER_EMAIL = "info@shipsar.in"
 
 # Effect Modes
 MODES = [
@@ -64,6 +70,7 @@ class PredatorRGBApp:
         self.direction = tk.IntVar(value=1)     # 1: Right to Left, 2: Left to Right
         self.auto_apply = tk.BooleanVar(value=True)
         self.turbo_mode = tk.BooleanVar(value=False)
+        self.device_status_reason = None
 
         # RGB Colors for Zones (Static mode support per zone)
         self.zone_colors = {
@@ -219,9 +226,11 @@ class PredatorRGBApp:
             fg=self.colors["text_muted"],
             font=("Segoe UI", 9, "bold"),
             padx=12, pady=4,
-            relief="flat"
+            relief="flat",
+            cursor="hand2"
         )
         self.status_label.pack(side="right", padx=5)
+        self.status_label.bind("<Button-1>", lambda e: self.on_status_label_click())
 
         # Main Workspace (Split Left/Right)
         main_container = ttk.Frame(self.root, style="TFrame")
@@ -457,7 +466,7 @@ class PredatorRGBApp:
         ttk.Label(dev_info_frame, text="Maintained by Shipsar Developers 🇮🇳", style="Header.TLabel").pack(anchor="w")
         ttk.Label(dev_info_frame, text="Lead Developer: Vijay Kumar", style="Subtitle.TLabel").pack(anchor="w")
 
-        ttk.Button(dev_card, text="🌐 shipsar.in", style="Primary.TButton", command=lambda: webbrowser.open("https://shipsar.in")).pack(side="right")
+        ttk.Button(dev_card, text="🌐 shipsar.in", style="Primary.TButton", command=lambda: self.open_url_async("https://shipsar.in")).pack(side="right")
 
         # Bottom Action Bar
         bottom_bar = ttk.Frame(self.root, style="TFrame")
@@ -740,23 +749,170 @@ class PredatorRGBApp:
         dev_static = os.path.exists(CHARACTER_DEVICE_STATIC)
 
         if not dev_dynamic and not dev_static:
+            self.device_status_reason = (
+                "Kernel module not loaded: neither /dev/acer-gkbbl-0 nor "
+                "/dev/acer-gkbbl-static-0 exist.\n\n"
+                "Run 'sudo modprobe facer' or check 'dkms status' / "
+                "'journalctl -u shipsar-acer-rgb' for build errors."
+            )
             self.status_label.config(
                 text="❌ Module Unloaded",
                 bg=self.colors["danger"],
                 fg="#ffffff"
             )
         elif not os.access(CHARACTER_DEVICE, os.W_OK) and not os.access(CHARACTER_DEVICE_STATIC, os.W_OK):
+            self.device_status_reason = (
+                "The RGB character device exists but is not writable by this user.\n\n"
+                "Run the app as root, or install the udev rule so it can run "
+                "unprivileged:\n"
+                "echo 'KERNEL==\"acer-gkbbl*\", MODE=\"0666\"' | sudo tee "
+                "/etc/udev/rules.d/99-acer-gkbbl.rules && sudo udevadm control "
+                "--reload-rules && sudo udevadm trigger"
+            )
             self.status_label.config(
                 text="⚠️ Requires Root / udev",
                 bg=self.colors["warning"],
                 fg="#000000"
             )
         else:
+            self.device_status_reason = None
             self.status_label.config(
                 text="✔ Kernel Driver Active",
                 bg=self.colors["success"],
                 fg="#000000"
             )
+
+    def on_status_label_click(self):
+        if self.device_status_reason:
+            self.show_error_dialog(
+                self.status_label.cget("text").lstrip("❌⚠️ ").strip() or "Hardware Status",
+                self.device_status_reason,
+                action_desc="Device status check"
+            )
+        else:
+            messagebox.showinfo("Device Status", "✔ Kernel driver is active and the RGB device is writable.")
+
+    @staticmethod
+    def open_url_async(url):
+        """webbrowser.open() can block for several seconds while the browser/mail
+        client cold-starts - always run it off the UI thread."""
+        threading.Thread(target=webbrowser.open, args=(url,), daemon=True).start()
+
+    # Error Reporting
+    def gather_system_info(self):
+        """Collects OS/kernel/device details useful for diagnosing hardware errors."""
+        os_release = {}
+        try:
+            with open("/etc/os-release") as f:
+                for line in f:
+                    if "=" in line:
+                        k, _, v = line.strip().partition("=")
+                        os_release[k] = v.strip('"')
+        except OSError:
+            pass
+
+        return {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "os": os_release.get("PRETTY_NAME", platform.platform()),
+            "kernel": platform.release(),
+            "arch": platform.machine(),
+            "python_version": platform.python_version(),
+            "desktop": os.environ.get("XDG_CURRENT_DESKTOP", "unknown"),
+            "session_type": os.environ.get("XDG_SESSION_TYPE", "unknown"),
+            "dynamic_device": "present" if os.path.exists(CHARACTER_DEVICE) else "MISSING",
+            "static_device": "present" if os.path.exists(CHARACTER_DEVICE_STATIC) else "MISSING",
+        }
+
+    def build_error_report(self, title, error_detail, action_desc=""):
+        info = self.gather_system_info()
+        lines = [
+            "Shipsar Acer RGB Controller - Error Report",
+            "=" * 43,
+            f"Timestamp: {info['timestamp']}",
+            f"App Version: {DRIVER_VERSION}",
+            "",
+            "--- System Info ---",
+            f"OS: {info['os']}",
+            f"Kernel: {info['kernel']} ({info['arch']})",
+            f"Python: {info['python_version']}",
+            f"Desktop: {info['desktop']} ({info['session_type']})",
+            "",
+            "--- Device Status ---",
+            f"/dev/acer-gkbbl-0: {info['dynamic_device']}",
+            f"/dev/acer-gkbbl-static-0: {info['static_device']}",
+            "",
+            "--- Current Settings ---",
+            f"Mode: {self.current_mode.get()}",
+            f"Speed: {self.speed.get()}",
+            f"Brightness: {self.brightness.get()}",
+            f"Direction: {self.direction.get()}",
+            f"Color: R={self.dynamic_red.get()} G={self.dynamic_green.get()} B={self.dynamic_blue.get()}",
+            "",
+            "--- Error ---",
+            f"Context: {title}",
+        ]
+        if action_desc:
+            lines.append(f"Action: {action_desc}")
+        lines.append(f"Details: {error_detail}")
+        return "\n".join(lines)
+
+    def show_error_dialog(self, title, error_detail, action_desc=""):
+        """Shows an error with a full diagnostic report the user can copy or email to the developer."""
+        report = self.build_error_report(title, error_detail, action_desc)
+
+        win = tk.Toplevel(self.root)
+        win.title(title)
+        win.geometry("560x480")
+        win.configure(bg=self.colors["bg_card"])
+        win.transient(self.root)
+        win.grab_set()
+
+        content = ttk.Frame(win, style="Card.TFrame", padding=15)
+        content.pack(fill="both", expand=True)
+
+        ttk.Label(content, text=f"⚠ {title}", style="Header.TLabel", font=("Segoe UI", 13, "bold")).pack(anchor="w", pady=(0, 8))
+        ttk.Label(content, text=error_detail, style="Card.TLabel", wraplength=520, justify="left").pack(anchor="w", pady=(0, 10))
+        ttk.Label(content, text="Full diagnostic report (included when emailing the developer):", style="Card.TLabel").pack(anchor="w")
+
+        text_frame = ttk.Frame(content, style="Card.TFrame")
+        text_frame.pack(fill="both", expand=True, pady=(5, 10))
+
+        report_box = tk.Text(
+            text_frame, wrap="word", height=14,
+            bg=self.colors["bg_input"], fg=self.colors["text_light"],
+            insertbackground=self.colors["text_light"], relief="flat"
+        )
+        report_box.insert("1.0", report)
+        report_box.configure(state="disabled")
+        report_box.pack(side="left", fill="both", expand=True)
+
+        scrollbar = ttk.Scrollbar(text_frame, command=report_box.yview)
+        scrollbar.pack(side="right", fill="y")
+        report_box.configure(yscrollcommand=scrollbar.set)
+
+        def copy_report():
+            self.root.clipboard_clear()
+            self.root.clipboard_append(report)
+            copy_btn.config(text="✔ Copied!")
+            win.after(2000, lambda: copy_btn.config(text="📋 Copy to Clipboard"))
+
+        def email_developer():
+            subject = urllib.parse.quote(f"Shipsar Acer RGB Controller - Error Report ({title})")
+            body = urllib.parse.quote(report)
+            self.open_url_async(f"mailto:{DEVELOPER_EMAIL}?subject={subject}&body={body}")
+
+        btn_frame = ttk.Frame(content, style="Card.TFrame")
+        btn_frame.pack(fill="x")
+
+        copy_btn = ttk.Button(btn_frame, text="📋 Copy to Clipboard", style="Secondary.TButton", command=copy_report)
+        copy_btn.pack(side="left", padx=(0, 5))
+
+        ttk.Button(
+            btn_frame, text=f"📧 Send to Developer ({DEVELOPER_EMAIL})",
+            style="Primary.TButton", command=email_developer
+        ).pack(side="left", padx=5)
+
+        ttk.Button(btn_frame, text="Close", style="Secondary.TButton", command=win.destroy).pack(side="right")
 
     def apply_to_hardware(self, silent=False):
         """Sends payload to Linux kernel character device or calls facer_rgb.py."""
@@ -770,6 +926,12 @@ class PredatorRGBApp:
 
         success = True
         err_msg = ""
+
+        if not os.path.exists(CHARACTER_DEVICE) and not os.path.exists(CHARACTER_DEVICE_STATIC):
+            self.check_device_status()
+            if not silent:
+                self.show_error_dialog("Hardware Error", self.device_status_reason, action_desc="Apply to hardware")
+            return
 
         try:
             if m_id == 0:  # Static mode per zone
@@ -785,7 +947,7 @@ class PredatorRGBApp:
                         with open(CHARACTER_DEVICE_STATIC, 'wb') as cd:
                             cd.write(bytes(payload_static))
                     else:
-                        cmd = [sys.executable, "facer_rgb.py", "-m", "0", "-z", str(z_id), "-cR", str(zr), "-cG", str(zg), "-cB", str(zb)]
+                        cmd = [sys.executable, FACER_RGB_SCRIPT, "-m", "0", "-z", str(z_id), "-cR", str(zr), "-cG", str(zg), "-cB", str(zb)]
                         subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
                 payload_dyn = [0] * PAYLOAD_SIZE
@@ -812,7 +974,7 @@ class PredatorRGBApp:
                         cd.write(bytes(payload))
                 else:
                     cmd = [
-                        sys.executable, "facer_rgb.py",
+                        sys.executable, FACER_RGB_SCRIPT,
                         "-m", str(m_id),
                         "-s", str(sp),
                         "-b", str(br),
@@ -826,6 +988,10 @@ class PredatorRGBApp:
         except PermissionError:
             success = False
             err_msg = f"Permission denied writing to {CHARACTER_DEVICE}. Run app as root or configure udev rules."
+        except subprocess.CalledProcessError as e:
+            success = False
+            stderr_text = e.stderr.decode(errors="replace").strip() if e.stderr else ""
+            err_msg = str(e) + (f"\nSubprocess stderr: {stderr_text}" if stderr_text else "")
         except Exception as e:
             success = False
             err_msg = str(e)
@@ -834,7 +1000,7 @@ class PredatorRGBApp:
             if success:
                 messagebox.showinfo("Success", "Keyboard backlight settings applied successfully!")
             else:
-                messagebox.showerror("Hardware Error", f"Failed to apply settings:\n{err_msg}")
+                self.show_error_dialog("Hardware Error", f"Failed to apply settings:\n{err_msg}", action_desc="Apply to hardware")
 
     # About Developer Dialog Modal
     def open_about_dialog(self):
@@ -878,7 +1044,7 @@ class PredatorRGBApp:
         btn_frame = ttk.Frame(content, style="Card.TFrame")
         btn_frame.pack(pady=10)
 
-        ttk.Button(btn_frame, text="🌐 Visit Website (shipsar.in)", style="Primary.TButton", command=lambda: webbrowser.open("https://shipsar.in")).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="🌐 Visit Website (shipsar.in)", style="Primary.TButton", command=lambda: self.open_url_async("https://shipsar.in")).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="Close", style="Secondary.TButton", command=about_win.destroy).pack(side="left", padx=5)
 
     # Profile Management
@@ -917,7 +1083,7 @@ class PredatorRGBApp:
             self.refresh_profiles()
             self.profile_var.set(name)
         except Exception as e:
-            messagebox.showerror("Error", f"Could not save profile:\n{e}")
+            self.show_error_dialog("Profile Save Error", f"Could not save profile:\n{e}", action_desc=f"Save profile '{name}'")
 
     def load_profile(self):
         name = self.profile_var.get()
@@ -951,7 +1117,7 @@ class PredatorRGBApp:
             self.apply_to_hardware(silent=True)
             messagebox.showinfo("Loaded", f"Profile '{name}' loaded and applied!")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to load profile:\n{e}")
+            self.show_error_dialog("Profile Load Error", f"Failed to load profile:\n{e}", action_desc=f"Load profile '{name}'")
 
     def delete_profile(self):
         name = self.profile_var.get()
